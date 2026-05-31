@@ -1,315 +1,347 @@
+#define NOMINMAX
+#define _HAS_STD_BYTE 0
 #include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <thread>
+#include <chrono>
 
 using namespace std;
 
-enum class Status { Pending, InProgress, Done };
-
-string statusToString(Status s)
+#ifdef _WIN32
+#include <windows.h>
+void enableColors()
 {
-    switch (s)
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+    GetConsoleMode(hOut, &dwMode);
+    SetConsoleMode(hOut, dwMode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+}
+#else
+void enableColors() {}
+#endif
+
+#define RESET   "\033[0m"
+#define RED     "\033[31m"
+#define GREEN   "\033[32m"
+#define YELLOW  "\033[33m"
+#define BLUE    "\033[34m"
+#define CYAN    "\033[36m"
+#define BOLD    "\033[1m"
+
+void loading(string text)
+{
+    cout << CYAN << text << RESET;
+    for (int i = 0; i < 3; i++)
     {
-        case Status::Pending: return "Pending";
-        case Status::InProgress: return "In Progress";
-        case Status::Done: return "Done";
+        cout << ".";
+        cout.flush();
+        this_thread::sleep_for(chrono::milliseconds(300));
     }
-    return "Unknown";
+    cout << "\n";
+}
+
+struct Date
+{
+    int d, m, y;
+
+    bool operator<(const Date& o) const
+    {
+        if (y != o.y) return y < o.y;
+        if (m != o.m) return m < o.m;
+        return d < o.d;
+    }
+};
+
+string dateStr(const Date& d)
+{
+    return (d.d < 10 ? "0" : "") + to_string(d.d) + "." +
+           (d.m < 10 ? "0" : "") + to_string(d.m) + "." +
+           to_string(d.y);
+}
+
+string statusStr(int s)
+{
+    if (s == 0) return "PENDING";
+    if (s == 1) return "IN PROGRESS";
+    return "DONE";
 }
 
 class Task
 {
-private:
-    string title;
-    string description;
-    int priority; // 1-3
-    string dueDate;
-    Status status;
-
 public:
-    Task(string t, string d, int p, string dd)
+    int id;
+    string title;
+    int priority;
+    Date due;
+    int status;
+
+    Task(int i, string t, int p, Date d)
     {
+        id = i;
         title = t;
-        description = d;
         priority = p;
-        dueDate = dd;
-        status = Status::Pending;
-    }
-
-    string getTitle() const { return title; }
-    int getPriority() const { return priority; }
-    string getDueDate() const { return dueDate; }
-    Status getStatus() const { return status; }
-
-    void setStatus(Status s) { status = s; }
-
-    void display() const
-    {
-        cout << "\nTitle: " << title
-             << "\nDescription: " << description
-             << "\nPriority: " << priority
-             << "\nDue date: " << dueDate
-             << "\nStatus: " << statusToString(status)
-             << "\n----------------------\n";
+        due = d;
+        status = 0;
     }
 };
 
 class Project
 {
-private:
+public:
     string name;
     vector<Task> tasks;
+    int nextId = 1;
 
-public:
     Project(string n) : name(n) {}
 
-    string getName() const { return name; }
-
-    // 1. Add task
     void addTask()
     {
-        string t, d, dd;
-        int p;
-
         cin.ignore();
 
-        cout << "Title: ";
+        string t;
+        int p;
+        Date d;
+
+        cout << YELLOW << "Task title: " << RESET;
         getline(cin, t);
 
-        cout << "Description: ";
-        getline(cin, d);
-
-        cout << "Priority (1-3): ";
+        cout << YELLOW << "Priority (1-3): " << RESET;
         cin >> p;
-        cin.ignore();
 
-        cout << "Due date: ";
-        getline(cin, dd);
+        cout << YELLOW << "Date (d m y): " << RESET;
+        cin >> d.d >> d.m >> d.y;
 
-        tasks.push_back(Task(t, d, p, dd));
+        tasks.emplace_back(nextId++, t, p, d);
+
+        loading("Adding task");
+        cout << GREEN << "Task added successfully!\n" << RESET;
     }
 
-    // 2. Remove task
-    void removeTask()
+    void show()
     {
-        string title;
-        cin.ignore();
+        cout << BOLD << BLUE << "\n=== PROJECT: " << name << " ===\n" << RESET;
 
-        cout << "Task title to remove: ";
-        getline(cin, title);
-
-        tasks.erase(
-            remove_if(tasks.begin(), tasks.end(),
-                [&](Task &t)
-                {
-                    return t.getTitle() == title;
-                }),
-            tasks.end()
-        );
-    }
-
-    // 3. Show all tasks
-    void showTasks() const
-    {
         if (tasks.empty())
         {
-            cout << "No tasks.\n";
+            cout << RED << "No tasks available\n" << RESET;
             return;
         }
 
-        for (const auto &t : tasks)
-            t.display();
+        cout << CYAN << "ID | TITLE | PRIO | DUE | STATUS\n" << RESET;
+        cout << "--------------------------------------\n";
+
+        for (auto& t : tasks)
+        {
+            cout << t.id << " | "
+                 << t.title << " | "
+                 << t.priority << " | "
+                 << dateStr(t.due) << " | "
+                 << statusStr(t.status) << "\n";
+        }
     }
 
-    // 4. Change status
     void changeStatus()
     {
-        string title;
-        cin.ignore();
+        int id, s;
+        cin >> id >> s;
 
-        cout << "Task title: ";
-        getline(cin, title);
-
-        for (auto &t : tasks)
+        for (auto& t : tasks)
         {
-            if (t.getTitle() == title)
+            if (t.id == id)
             {
-                int choice;
-                cout << "1.Pending 2.InProgress 3.Done: ";
-                cin >> choice;
-
-                if (choice == 1) t.setStatus(Status::Pending);
-                else if (choice == 2) t.setStatus(Status::InProgress);
-                else if (choice == 3) t.setStatus(Status::Done);
-
+                t.status = s;
+                cout << GREEN << "Status updated\n" << RESET;
                 return;
             }
         }
 
-        cout << "Task not found.\n";
+        cout << RED << "Task not found\n" << RESET;
     }
 
-    // 5. Filter by status
-    void filterByStatus(Status s) const
-    {
-        for (const auto &t : tasks)
-        {
-            if (t.getStatus() == s)
-                t.display();
-        }
-    }
-
-    // 6. Sort by priority
-    void sortByPriority()
+    void sortPriority()
     {
         sort(tasks.begin(), tasks.end(),
-            [](const Task &a, const Task &b)
+            [](Task a, Task b)
             {
-                return a.getPriority() > b.getPriority();
+                return a.priority > b.priority;
             });
+
+        cout << GREEN << "Sorted by priority\n" << RESET;
     }
 
-    // 7. Search task
-    void searchTask()
+    void sortDate()
     {
-        string key;
-        cin.ignore();
+        sort(tasks.begin(), tasks.end(),
+            [](Task a, Task b)
+            {
+                return a.due < b.due;
+            });
 
-        cout << "Search keyword: ";
-        getline(cin, key);
+        cout << GREEN << "Sorted by date\n" << RESET;
+    }
 
-        for (auto &t : tasks)
+    void markDone()
+    {
+        int id;
+        cin >> id;
+
+        for (auto& t : tasks)
         {
-            if (t.getTitle().find(key) != string::npos)
-                t.display();
+            if (t.id == id)
+            {
+                t.status = 2;
+                cout << GREEN << "Marked as DONE\n" << RESET;
+                return;
+            }
         }
     }
 
-    // 8. Summary
-    void summary() const
+    void summary()
     {
-        int done = 0, total = tasks.size();
+        int done = 0;
 
-        for (const auto &t : tasks)
-            if (t.getStatus() == Status::Done)
-                done++;
+        for (auto& t : tasks)
+            if (t.status == 2) done++;
 
-        cout << "Completed: " << done << "/" << total << "\n";
+        cout << CYAN << "Progress: " << done << "/" << tasks.size() << RESET << "\n";
     }
 };
 
 class Manager
 {
-private:
+public:
     vector<Project> projects;
 
-public:
-    // 1. Add project
     void addProject()
     {
-        string name;
         cin.ignore();
 
-        cout << "Project name: ";
-        getline(cin, name);
+        string n;
+        cout << YELLOW << "Project name: " << RESET;
+        getline(cin, n);
 
-        projects.push_back(Project(name));
+        projects.emplace_back(n);
+
+        loading("Creating project");
+        cout << GREEN << "Project created\n" << RESET;
     }
 
-    // 2. Show projects
-    void showProjects() const
+    Project* find(string name)
     {
-        for (const auto &p : projects)
-            cout << "- " << p.getName() << "\n";
-    }
-
-    Project* findProject(const string &name)
-    {
-        for (auto &p : projects)
-            if (p.getName() == name)
+        for (auto& p : projects)
+            if (p.name == name)
                 return &p;
-
         return nullptr;
     }
 
-    // 3. Global summary
-    void globalSummary() const
+    void show()
     {
-        int total = 0, done = 0;
+        cout << BOLD << "\n=== PROJECT DASHBOARD ===\n" << RESET;
 
-        for (const auto &p : projects)
+        if (projects.empty())
         {
-            // няма директен достъп до tasks -> учител-friendly encapsulation
+            cout << RED << "No projects available\n" << RESET;
+            return;
         }
 
-        cout << "System active.\n";
-    }
-};
-
-int main()
-{
-    Manager m;
-    int choice;
-
-    do
-    {
-        cout << "\n--- MENU ---\n";
-        cout << "1. Add project\n";
-        cout << "2. Show projects\n";
-        cout << "3. Add task\n";
-        cout << "4. Remove task\n";
-        cout << "5. Show tasks\n";
-        cout << "6. Change status\n";
-        cout << "7. Sort tasks\n";
-        cout << "8. Search task\n";
-        cout << "9. Filter done tasks\n";
-        cout << "10. Summary\n";
-        cout << "0. Exit\n";
-        cout << "Choice: ";
-        cin >> choice;
-
-        if (choice == 1)
+        for (auto& p : projects)
         {
-            m.addProject();
-        }
-        else if (choice == 2)
-        {
-            m.showProjects();
-        }
-        else if (choice >= 3 && choice <= 9)
-        {
-            string pname;
-            cin.ignore();
+            cout << BLUE << "\n[" << p.name << "]\n" << RESET;
 
-            cout << "Project name: ";
-            getline(cin, pname);
-
-            Project *p = m.findProject(pname);
-
-            if (!p)
+            if (p.tasks.empty())
             {
-                cout << "Project not found.\n";
+                cout << RED << "  No tasks\n" << RESET;
                 continue;
             }
 
-            switch (choice)
+            for (auto& t : p.tasks)
             {
-                case 3: p->addTask(); break;
-                case 4: p->removeTask(); break;
-                case 5: p->showTasks(); break;
-                case 6: p->changeStatus(); break;
-                case 7: p->sortByPriority(); break;
-                case 8: p->searchTask(); break;
-                case 9: p->filterByStatus(Status::Done); break;
+                cout << "  - " << t.title
+                     << " (" << statusStr(t.status)
+                     << ", P" << t.priority << ")\n";
             }
         }
-        else if (choice == 10)
+    }
+};
+
+void menu(bool hasProjects)
+{
+    cout << BOLD << CYAN << "\n=== MENU ===\n" << RESET;
+
+    cout << "1. Add project\n";
+    cout << "2. Show projects\n";
+
+    if (hasProjects)
+    {
+        cout << "3. Add task\n";
+        cout << "4. Show project tasks\n";
+        cout << "5. Change status\n";
+        cout << "6. Sort by priority\n";
+        cout << "7. Sort by date\n";
+        cout << "8. Mark done\n";
+        cout << "9. Summary\n";
+    }
+
+    cout << "0. Exit\n";
+}
+
+int main()
+{
+    enableColors();
+
+    Manager m;
+    int c;
+
+    loading("Starting system");
+
+    while (true)
+    {
+        menu(!m.projects.empty());
+
+        cin >> c;
+
+        if (c == 0)
         {
-            cout << "Feature available per project.\n";
+            cout << GREEN << "System closed\n" << RESET;
+            break;
         }
 
-    } while (choice != 0);
+        if (c == 1)
+        {
+            m.addProject();
+        }
+        else if (c == 2)
+        {
+            m.show();
+        }
+        else
+        {
+            if (m.projects.empty())
+            {
+                cout << RED << "No projects yet\n" << RESET;
+                continue;
+            }
 
-    return 0;
+            string name;
+            cin >> name;
+
+            Project* p = m.find(name);
+
+            if (!p)
+            {
+                cout << RED << "Project not found\n" << RESET;
+                continue;
+            }
+
+            if (c == 3) p->addTask();
+            if (c == 4) p->show();
+            if (c == 5) p->changeStatus();
+            if (c == 6) p->sortPriority();
+            if (c == 7) p->sortDate();
+            if (c == 8) p->markDone();
+            if (c == 9) p->summary();
+        }
+    }
 }
