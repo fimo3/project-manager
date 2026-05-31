@@ -1,5 +1,6 @@
 #include "Task.h"
 #include <vector>
+using namespace std;
 
 class Project {
 private:
@@ -9,6 +10,8 @@ private:
 
 public:
     Project(std::string name);
+
+    std::string getName() const;
 
     void addTask(std::string title, int priority, chrono::system_clock::time_point due);
     void show();
