@@ -1,4 +1,5 @@
 #include "Project.h"
+#include <string>
 #include <vector>
 
 class Manager {
